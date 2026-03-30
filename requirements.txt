@@ -4,3 +4,4 @@ numpy
 opencv-python
 pylibdmtx
 zxing-cpp
+flask-cors
