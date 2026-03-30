@@ -8,6 +8,8 @@ from flask_cors import CORS
 from qr_detect import analyze_image
 
 app = Flask(__name__)
+
+# 🔥 CORS ENABLE
 CORS(app)
 
 
@@ -20,25 +22,39 @@ def api_detect():
     file = request.files["image"]
 
     try:
-        # 🔥 decode image
+        # 🔥 READ IMAGE
         file_bytes = file.read()
         np_arr = np.frombuffer(file_bytes, np.uint8)
-        image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-        if image is None:
+        image = cv2.imdecode(np_arr, cv2.IMREAD_UNCHANGED)
+
+        if image is None or image.size == 0:
             return jsonify({"success": False, "error": "Invalid image"}), 400
 
-        # 🔥 RESIZE (balanced)
-        h, w = image.shape[:2]
+        # 🔥 HANDLE CHANNELS SAFELY
+        if len(image.shape) == 2:
+            # already grayscale → convert to BGR for consistency
+            image_color = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        else:
+            image_color = image
+
+        # 🔥 RESIZE (balanced for speed + accuracy)
+        h, w = image_color.shape[:2]
         if w > 1400:
             scale = 1400 / w
-            image = cv2.resize(image, (int(w * scale), int(h * scale)))
+            image_color = cv2.resize(image_color, (int(w * scale), int(h * scale)))
 
-        # 🔥 TRY BOTH COLOR + GRAYSCALE (BEST)
-        analysis = analyze_image(image)
+        # 🔥 FIRST TRY (COLOR)
+        analysis = analyze_image(image_color)
 
+        # 🔥 SECOND TRY (GRAYSCALE fallback)
         if not any(r.get("value") for r in analysis.get("results", [])):
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+            if len(image_color.shape) == 3:
+                gray = cv2.cvtColor(image_color, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = image_color
+
             analysis = analyze_image(gray)
 
         return jsonify({
@@ -52,6 +68,12 @@ def api_detect():
             "success": False,
             "error": str(e)
         }), 500
+
+
+# 🔥 HEALTH CHECK (important for Render)
+@app.route("/", methods=["GET"])
+def health():
+    return "OK"
 
 
 if __name__ == "__main__":
